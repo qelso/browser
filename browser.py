@@ -138,4 +138,4 @@ def load(url:URL):
 
 if __name__ == "__main__":
     import sys
-    load(URL("http://browser.engineering/redirect"))
+    load(URL(sys.argv[1]))
