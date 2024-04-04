@@ -1,14 +1,18 @@
 import socket
 import ssl
+import datetime
+import gzip
 
 ENTITIES = {
     "&lt;":"<",
     "&gt;":">"
 }
 
-SOCKET_CACHE = {
+# CACHES
+# TODO: Add better caching strategies
+SOCKET_CACHE = {}
+CONTENT_CACHE = {}
 
-}
 class URL():
     def __init__(self,url:str) -> None:
         # https://example.org/resource.html
@@ -50,6 +54,7 @@ class URL():
         request += f"Host: {self.host}\r\n"
         #request += f"Connection: close\r\n"
         request += f"User-Agent: Gigachad-browser\r\n"
+        request += f"Accept-Encoding: gzip\r\n"
 
         request += "\r\n"
         return request
@@ -75,35 +80,61 @@ class URL():
 
             request = f"GET {self.path} HTTP/1.0\r\n"
             request = self._add_headers(request)
-            s.send(request.encode("utf8"))
-            
-            response = s.makefile("r", encoding="utf8", newline="\r\n")
-            statusline = response.readline()
-            version, status, explanation = statusline.split(" ", 2)
 
-            response_headers = {}
-            while True:
-                line = response.readline()
-                if line == "\r\n": break
-                header, value = line.split(":",1)
-                response_headers[header.casefold()] = value.strip()
+            send_request = True
+            if request in CONTENT_CACHE:
+                content,start_date,max_age = CONTENT_CACHE[request] 
+                if (start_date + datetime.timedelta(seconds=max_age)) > (datetime.datetime.now()):
+                    send_request = False
+                    print("Using cached content")
             
-            assert "transfer-encoding" not in response_headers
-            assert "content-encoding" not in response_headers
+            if send_request:
+                s.send(request.encode("utf8"))
+            
+                response = s.makefile("rb", encoding="utf8", newline="\r\n")
+                statusline = response.readline().decode()
+                version, status, explanation = statusline.split(" ", 2)
+                status = int(status)
 
-            size = -1
-            if "content-length" in response_headers:
-                size = int(response_headers["content-length"])
+                response_headers = {}
+                while True:
+                    line = response.readline().decode()
+                    if line == "\r\n": break
+                    header, value = line.split(":",1)
+                    response_headers[header.casefold()] = value.strip()
             
-            if "location" in response_headers and int(status) >= 300 and redirects < 3:
-                if response_headers["location"].startswith("/"):
-                    new_url = f"{self.scheme}://{self.host}{response_headers['location']}"
+                #assert "transfer-encoding" not in response_headers
+                #assert "content-encoding" not in response_headers
+
+                size = -1
+                if "content-length" in response_headers:
+                    size = int(response_headers["content-length"])
+            
+                if "location" in response_headers and status >= 300 and redirects < 3:
+                    if response_headers["location"].startswith("/"):
+                        new_url = f"{self.scheme}://{self.host}{response_headers['location']}"
+                    else:
+                        new_url = response_headers["location"]
+                    content = URL(new_url).request(redirects=redirects+1)
                 else:
-                    new_url = response_headers["location"]
-                content = URL(new_url).request(redirects=redirects+1)
-            else:
-                content = response.read(size)
-            response.close()
+                    content = response.read(size)
+
+                if status == 200:  
+                    if "cache-control" in response_headers:
+                        options = response_headers["cache-control"].split(",")
+                        for opt in options:
+                            if "max-age" in opt:
+                                max_age = int(opt.split("=", 1)[1])
+                                start_date = datetime.datetime.strptime(response_headers["date"],"%a, %d %b %Y %H:%M:%S GMT")
+                                CONTENT_CACHE[request] = (content,start_date,max_age)
+                            # add handling of must-revalidate directive
+                
+                if "content-encoding" in response_headers:
+                    if "gzip" in response_headers["content-encoding"]:
+                        content = gzip.decompress(content).decode()
+                #TODO: Add transfer-encoding
+
+                response.close()
 
         elif self.scheme == "file":
             content = open(self.path).read()
@@ -138,4 +169,4 @@ def load(url:URL):
 
 if __name__ == "__main__":
     import sys
-    load(URL(sys.argv[1]))
+    #load(URL("https://example.org"))
