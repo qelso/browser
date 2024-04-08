@@ -2,6 +2,7 @@ import socket
 import ssl
 import datetime
 import gzip
+import tkinter
 
 ENTITIES = {
     "&lt;":"<",
@@ -132,6 +133,8 @@ class URL():
                 if "content-encoding" in response_headers:
                     if "gzip" in response_headers["content-encoding"]:
                         content = gzip.decompress(content).decode()
+                else:
+                    content = content.decode()
                 #TODO: Add transfer-encoding
 
                 response.close()
@@ -145,28 +148,50 @@ class URL():
         if self.viewsource:
             for e in ENTITIES:
                 content = content.replace(ENTITIES[e],e)
+
         return content
     
-def show(body:str):
-    in_tag = False
-    
-    toshow = ""
-    for c in body:
-        if c == "<":
-            in_tag = True
-        elif c == ">":
-            in_tag = False
-        elif not in_tag:
-            toshow += c
-    
-    for e in ENTITIES:
-        toshow = toshow.replace(e,ENTITIES[e])
-    print (toshow)
 
-def load(url:URL):
-    body = url.request()
-    show(body)
+class Browser():
+    def __init__(self) -> None:
+        self.window = tkinter.Tk()
+        self.canvas = tkinter.Canvas(self.window, width=800, height=600)
+        self.canvas.pack()
+    
+    def load(self,url:URL):   
+        text = self.lex(url.request())
+        HSTEP, VSTEP = 13,18
+        cursor_x,cursor_y = HSTEP, VSTEP
+        for c in text:
+            self.canvas.create_text(cursor_x,cursor_y, text=c)
+            cursor_x += HSTEP   
+            
+            if cursor_x >= 800 - HSTEP:
+                cursor_x = HSTEP
+                cursor_y += VSTEP
+
+    def lex(self,body:str): 
+        in_tag = False
+        text = ""
+        for c in body:
+            if c == "<":
+                in_tag = True
+            elif c == ">":
+                in_tag = False
+            elif not in_tag:
+                text += str(c)
+        
+        for e in ENTITIES:
+            text = text.replace(e,ENTITIES[e])
+
+        return text   
 
 if __name__ == "__main__":
     import sys
-    #load(URL("https://example.org"))
+    #Browser().load(URL(sys.argv[1]))
+    Browser().load(URL("https://browser.engineering/examples/xiyouji.html"))
+    tkinter.mainloop()
+
+
+
+
