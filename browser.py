@@ -14,6 +14,38 @@ ENTITIES = {
 SOCKET_CACHE = {}
 CONTENT_CACHE = {}
 
+HEIGHT = 600
+EFFECTIVE_HEIGHT = 600
+WIDTH = 800
+SCROLL_STEP = 100
+HSTEP, VSTEP = 13,18
+SCROLL_MULTIPLIER = 0
+
+def layout(text):
+    display_list = list() 
+    cursor_x,cursor_y = HSTEP, VSTEP
+
+    global SCROLL_MULTIPLIER
+    global EFFECTIVE_HEIGHT
+    
+    for c in text:
+        display_list.append((cursor_x,cursor_y, c))
+        cursor_x += HSTEP   
+        
+        if c == "\n":
+            cursor_x = HSTEP
+            cursor_y += VSTEP  
+
+        if cursor_x >= WIDTH - HSTEP:
+            cursor_x = HSTEP
+            cursor_y += VSTEP         
+
+    SCROLL_MULTIPLIER = HEIGHT/cursor_y
+    if SCROLL_MULTIPLIER < 1:
+        SCROLL_MULTIPLIER = 1 - SCROLL_MULTIPLIER 
+    EFFECTIVE_HEIGHT = cursor_y
+    return display_list
+
 class URL():
     def __init__(self,url:str) -> None:
         # https://example.org/resource.html
@@ -153,22 +185,52 @@ class URL():
     
 
 class Browser():
+    
     def __init__(self) -> None:
         self.window = tkinter.Tk()
-        self.canvas = tkinter.Canvas(self.window, width=800, height=600)
-        self.canvas.pack()
+        self.canvas = tkinter.Canvas(self.window, width=WIDTH, height=HEIGHT)
+        self.canvas.pack(expand=True,fill='both')
+        self.scroll = 0
+        self.window.bind("<Down>",self._scrolldown)
+        self.window.bind("<Up>",self._scrollup)
+        self.window.bind("<Button-4>",self._scrollup)
+        self.window.bind("<Button-5>",self._scrolldown)
+        self.canvas.bind("<Configure>",self._resize)
+        #self.window.bind("<MouseWheel>",self._scrollwheel)
     
+    def _resize(self,ev):
+        global HEIGHT,WIDTH
+        HEIGHT = ev.height
+        WIDTH = ev.width
+        self.display_list = layout(self.text)
+        self.draw()
+    
+    def _scrollwheel(self,ev):
+        pass
+    
+    def _scrolldown(self,ev):
+        self.scroll += SCROLL_STEP
+        self.draw()
+     
+    def _scrollup(self,ev):
+        self.scroll -= SCROLL_STEP
+        self.draw()  
+
     def load(self,url:URL):   
-        text = self.lex(url.request())
-        HSTEP, VSTEP = 13,18
-        cursor_x,cursor_y = HSTEP, VSTEP
-        for c in text:
-            self.canvas.create_text(cursor_x,cursor_y, text=c)
-            cursor_x += HSTEP   
-            
-            if cursor_x >= 800 - HSTEP:
-                cursor_x = HSTEP
-                cursor_y += VSTEP
+        self.text = self.lex(url.request())
+        self.display_list = layout(self.text)
+        self.draw()
+     
+    def draw(self):
+        self.canvas.delete("all")
+
+        scroll_y = self.scroll/EFFECTIVE_HEIGHT
+        scroll_y = HEIGHT * scroll_y
+        self.canvas.create_rectangle(WIDTH-10,scroll_y,WIDTH,5+scroll_y+HEIGHT-(HEIGHT*SCROLL_MULTIPLIER),fill="blue")
+        for x,y,c in self.display_list:
+            if y > self.scroll + HEIGHT: continue
+            if y + VSTEP < self.scroll: continue 
+            self.canvas.create_text(x,y - self.scroll,text=c)
 
     def lex(self,body:str): 
         in_tag = False
@@ -188,8 +250,9 @@ class Browser():
 
 if __name__ == "__main__":
     import sys
-    #Browser().load(URL(sys.argv[1]))
-    Browser().load(URL("https://browser.engineering/examples/xiyouji.html"))
+    Browser().load(URL(sys.argv[1]))
+    #Browser().load(URL("https://developer.mozilla.org/en-US/docs/Learn/JavaScript/First_steps/Math"))
+    #Browser().load(URL("https://example.org"))   
     tkinter.mainloop()
 
 
